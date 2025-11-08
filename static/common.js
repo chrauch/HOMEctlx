@@ -97,11 +97,44 @@ function bringIntoView(elementId) {
     }
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('logo').addEventListener('click', function() {
-        var menus = document.getElementsByClassName('menu');
-        Array.prototype.forEach.call(menus, function(menu) {
-            menu.classList.toggle('hidden');
+function loadEmbedded(src, elementId) {
+    if (!src || !elementId) {
+        console.error("Source URL or element ID is missing.");
+        return;
+    }
+
+    const targetElement = document.getElementById(elementId);
+    if (!targetElement) {
+        console.error(`Element with ID "${elementId}" not found.`);
+        return;
+    }
+
+    fetch(src)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to load content from ${src}: ${response.status} ${response.statusText}`);
+            }
+            return response.text();
+        })
+        .then(data => {
+            targetElement.outerHTML = data;
+        })
+        .catch(error => {
+            console.error("Error loading embedded content:", error);
+            targetElement.outerHTML = `Error loading embedded content.`;
         });
-    });
+}
+
+document.addEventListener("click", function(event) {
+    const menu = document.getElementsByClassName('menu')[0];
+
+    if (!menu) return;
+
+    if (event.target.closest("#logo")) {
+        menu.classList.toggle('hidden');
+    }
+
+    if (event.target.closest("details") || event.target.closest(".execute")) {
+        menu.classList.add('hidden');
+    }
 });

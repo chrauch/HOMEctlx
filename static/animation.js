@@ -2,7 +2,7 @@
    Distributed under terms of the GPL3 license. */
 
 /*
-Animations for the background tiles.
+Animations for the background tiles. Currently deactivated because certain browsers do not display them properly.
 */
 
 function getRandomColor() {
@@ -20,8 +20,8 @@ function initializeGrid() {
     if (tiles.length === 0) {
         Array.from({ length: tilesToCreate }, createTile);
     }
-    changeTilesColor();
-    updateBaseColor();
+    //changeTilesColor();
+    //updateBaseColor();
 }
 
 function updateBaseColor() {
@@ -145,6 +145,6 @@ let randomX = 0, randomY = 0, tilesToCreate = 8;
 document.addEventListener('DOMContentLoaded', () => {
     initializeGrid();
     duplicateTiles();
-    setRegularInterval(initializeGrid, 4000, 3000);
-    if (Math.random() < 0.1) createEmoji();
+    //setRegularInterval(initializeGrid, 4000, 3000);
+    //if (Math.random() < 0.1) createEmoji();
 });
