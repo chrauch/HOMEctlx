@@ -1,27 +1,80 @@
+{% macro render_field(v) %}
+
+    {%- if v.type() == "title" -%}
+    <span class="md-header md-header-{{v.order}} {{v.style}}">{{v.text}}</span>
+
+    {%- elif v.type() == "link" -%}
+    <a class="md-link {{v.style}}" href="{{v.link}}"
+    {%- if not v.link.startswith('/') %} target="_blank"{% endif -%}
+    >{{- v.text -}}</a>
+    
+    {%- elif v.type() == "embed" -%}
+    <details>
+        <summary>
+            <span class="md-iframe-header {{v.style}}">{{- v.text -}}</span>
+        </summary>
+        <a class="small inactive md-link {{v.style}}" href="{{v.link}}"
+            {%- if not v.link.startswith('/') %} target="_blank"{% endif -%}
+            >{{- v.link -}}</a>
+        <iframe 
+            class="md-iframe {{v.style}}"
+            src="{{v.link}}"
+            allowfullscreen="true"
+            allowtransparency="true"
+            allow="encrypted-media">
+        </iframe>
+    </details>
+    {# <span class="action md-link {{v.style}}" id="embed-{{v.link}}"
+    onclick="loadEmbedded('{{v.link}}', 'embed-{{v.link}}')">{{- v.text -}}</span> #}
+    
+    {%- elif v.type() == "space" -%}
+        {%- for _ in range(v.rows) -%}
+        <br>
+        {%- endfor -%}
+
+    {%- else -%}
+    <span class="info {{v.style}}">{{- v.text -}}</span>
+
+    {%- endif -%}
+{% endmacro %}
+
 {% if field.summary not in [None, ''] %}
 <details>
     <summary>{{field.summary}}</summary>
 {% endif %}
     <div class="md-back width-1{% if field.recess %} recess back-3{% endif %} {{field.style}}">
-        {% for v in field.content %}
-            {%- if v.type() == "title" -%}
-            <span class="glow-b md-header md-header-{{v.order}} {{v.style}}">{{v.text}}</span>
 
-            {%- elif v.type() == "link" -%}
-            <a class="md-link {{v.style}}" href="{{v.link}}"
-                {%- if not v.link.startswith('/') %} target="_blank"{% endif -%}
-                >{{v.text}}</a>
+        {%- if field.content|length == 1 -%}
+        <div>
+            {%- for c in field.content[0].content -%}
+                {{- render_field(c) -}}
+            {%- endfor -%}
+        </div>
+        {%- else -%}
 
-            {%- elif v.type() == "space" -%}
-                {%- for v in range(v.rows) -%}
-                <br>
-                {%- endfor -%}
-        
-            {%- else -%}
-            <span class="info {{v.style}}">{{v.text}}</span>
+            {% for m in field.content %}
+            <details {% if field.content|length == 1 %}open="open"{% endif %}>
+                {%- if m.content[0].type() == "title" -%}
+                    <summary class="md-header md-header-{{m.content[0].order}} {{m.content[0].style}}">{{m.content[0].text}}</summary>
+                    <div>
+                        {%- for c in m.content[2:] -%}
+                            {{- render_field(c) -}}
+                        {%- endfor -%}
+                    </div>
+                {%- else -%}
+                    <summary class="inactive">...</summary>
+                    <div>
+                        {%- for c in m.content -%}
+                            {{- render_field(c) -}}
+                        {%- endfor -%}
+                    </div>
+                {%- endif -%}
 
-            {%- endif -%}
-        {% endfor %}
+            </details>
+            {% endfor %}
+
+        {%- endif -%}
+
     </div>
 {% if field.summary not in [None, ''] %}
 </details>

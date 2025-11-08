@@ -225,6 +225,18 @@ class applink(uielement):
 
 
 @dataclass
+class embed(uielement):
+    link:str
+    text:str
+    style:str=''
+
+
+@dataclass
+class section(uielement):
+    content:list
+
+
+@dataclass
 class markdown(uielement):
     content:list
     recess:bool=True

@@ -311,7 +311,7 @@ def edit(file) -> list[m.form]:
                     confirm="Do you want to delete this file?")
             ]))
     
-    path = f"share{session['dir']}".strip('/') + '/' + file
+    path = f"share/{session['dir'].strip('/')}/{file}"
     forms[0].fields.append(m.label(f"file: {path}", 'small'))
     return [m.view("_body", f"share", forms)]
 

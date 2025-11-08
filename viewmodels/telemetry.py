@@ -85,6 +85,7 @@ def routines():
         "iostat",
         "du -h",
         "df -h",
+        "tree -h",
         "free -m",
         "sar -A",
         "journalctl --no-pager | tail -n 100"]

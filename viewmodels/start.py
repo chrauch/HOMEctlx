@@ -13,18 +13,52 @@ import services.fileaccess as fa
 import services.routines as rou
 import services.scheduler as sd
 from viewmodels import markdown
+from datetime import datetime
+import random
 
 
 def ctl() -> list[m.view]:
     """ Starting point."""
     forms = []
-    forms.append(m.form(None, None, [m.space(14)], True, False))
+    _add_intro(forms)
     _add_md(forms)
     _add_cmds(forms)
     _add_tasks(forms)
     _add_help(forms)
     return [m.view("_body", "", forms)]
 
+
+def _add_intro(forms):
+    """ Add intro."""
+    #welcome_messages = [
+    #    "Welcome",
+    #    "Bienvenue",
+    #    "Willkommen",
+    #    "Bienvenido",
+    #    "Benvenuto",
+    #    "欢迎",
+    #    "Добро пожаловать",
+    #    "ようこそ",
+    #    "வணக்கம்",
+    #    "स्वागत है",
+    #    "Selamat Datang",
+    #    "שָׁלוֹם",
+    #    "환영합니다",
+    #    "Välkommen",
+    #    "Bem-vindo",
+    #    "مرحبا",
+    #    "Karibu",
+    #    "Sawubona",
+    #]
+    #random.shuffle(welcome_messages)
+    #welcome = '\n'.join(welcome_messages)
+    #welcome = ""
+    #for i, message in enumerate(welcome_messages):
+    #    welcome += f"{message}{'\n' if (i+1) % 3 == 0 else ' '}"
+    #date = datetime.now().strftime("%Y-%m-%d")
+    #forms.append(m.form(None, None, [
+    #    m.label(welcome, "welcome"), m.space(2)], True, False))
+    forms.append(m.form(None, None, [m.space(11)], True, False))
 
 def _add_help(forms):
     """ Add help."""
@@ -38,7 +72,8 @@ See README file.
 
 ## License 
 Copyright (C) 2024 Christian Rauch.
-Distributed under terms of the GPL3 license.""", False)
+Distributed under terms of the GPL3 license.""", False),
+        m.link("/logout", "Logout")
         ], False, True))
     
 
