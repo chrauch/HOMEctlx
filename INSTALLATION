@@ -4,15 +4,15 @@ Distributed under terms of the GPL3 license.
 # Installation
 
 ## Create a virtual environment
-Copy HOMEctlx to a place like /srv and change into the directory.
-  cd /srv/HOMEctlx
+Copy application files to a place like /srv and change into the directory.
+  cd /srv/homectlx
 Requires Python, pip, python3-venv.
 Create the virtual environment.
   python3 -m venv .venv
 Activate it.
   source .venv/bin/activate
 Install Flask and WSGI components.
-  pip install -r ./etc/requirements.txt
+  python3 -m pip install -r ./etc/requirements.txt
 Environments are not portable, create them in place.
 
 ## Install, configure, and run the WSGI server
@@ -21,17 +21,18 @@ Install uWSGI using the package manager of your system.
   sudo [apt-get|dnf|...] install uwsgi-plugin-python3
 
 Run the WSGI server to test the setup so far.
-  uwsgi --ini /srv/HOMEctlx/etc/HOMEctlx.uwsgi.ini
-Open localhost:5010 in a browser and check if it works. 
+  uwsgi --ini /srv/homectlx/etc/homectlx.uwsgi.ini
+Open http://localhost:5010 in a browser and check if it works. 
 Kill the process afterwards.
+Note: After Nginx is configured, access will be via https://localhost (or your server IP).
 
 Configure the WSGI server by creating the configuration file.
-See ./etc/HOMEctlx.uwsgi.ini. 
-  sudo nano /etc/uwsgi/apps-available/HOMEctlx.ini
+See ./etc/homectlx.uwsgi.ini. 
+  sudo nano /etc/uwsgi/apps-available/homectlx.ini
     [uwsgi]
     plugins      = python3
     socket       = 127.0.0.1:5010
-    chdir        = /srv/HOMEctlx
+    chdir        = /srv/homectlx
     protocol     = http
     wsgi-file    = app.py
     callable     = app
@@ -39,7 +40,7 @@ See ./etc/HOMEctlx.uwsgi.ini.
     threads      = 2
     buffer-size  = 32768
     stats        = 127.0.0.1:9191
-    virtualenv   = /srv/HOMEctlx/.venv
+    virtualenv   = /srv/homectlx/.venv
     http-timeout = 86400
     uid          = chris
 
@@ -48,27 +49,73 @@ You may be required to add the plug-in directory
 Change the values for chdir and uid. Your directory structure may differ.
 
 Add to enabled sites.
-  sudo ln -s /etc/uwsgi/apps-available/HOMEctlx.ini /etc/uwsgi/apps-enabled
+  sudo ln -s /etc/uwsgi/apps-available/homectlx.ini /etc/uwsgi/apps-enabled
 
 Enable and (re)start.
   sudo systemctl enable uwsgi
   sudo systemctl start uwsgi
 
+## Generate self-signed SSL certificate for HTTPS
+Since this application runs on a local network only, create a self-signed certificate.
+Create a directory for SSL certificates.
+  sudo mkdir -p /etc/ssl/homectlx
+
+Generate a self-signed certificate with no expiration date.
+  sudo openssl req -x509 -nodes -days 36500 -newkey rsa:2048 \
+    -keyout /etc/ssl/homectlx/server.key \
+    -out /etc/ssl/homectlx/server.crt
+
+When prompted, fill in the certificate information:
+  - Country Name: Your country code (e.g., DE)
+  - State or Province: Your state
+  - Locality Name: Your city
+  - Organization Name: Your organization or "Home Network"
+  - Common Name: Your server's IP address (e.g., 192.168.0.100) or hostname
+  - Email Address: Your email (optional)
+
+Set appropriate permissions for the certificate files.
+  sudo chmod 600 /etc/ssl/homectlx/server.key
+  sudo chmod 644 /etc/ssl/homectlx/server.crt
+
+Note: Browsers will show a security warning for self-signed certificates.
+You will need to add a security exception in your browser to access the site.
+s
 ## Install, configure, and run the web-server
 Install Nginx using the package manager of your system.
   sudo [apt-get|dnf|...] install nginx
 
-Configure the reverse proxy by creating the configuration file.
-  sudo nano /etc/nginx/sites-available/HOMEctlx
+Configure the reverse proxy for HTTPS-only access.
+  sudo nano /etc/nginx/sites-available/homectlx
     server {
         listen 80 default_server;
         listen [::]:80 default_server;
+        server_name _;
+        
+        # Redirect all HTTP traffic to HTTPS
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl default_server;
+        listen [::]:443 ssl default_server;
+
+        # SSL certificate configuration
+        ssl_certificate /etc/ssl/homectlx/server.crt;
+        ssl_certificate_key /etc/ssl/homectlx/server.key;
+
+        # SSL security settings
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers on;
+        ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 10m;
 
         location / {
             proxy_pass http://localhost:5010;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
         }
     }
 
@@ -76,8 +123,8 @@ You might need to remove the default configuration if conflicting.
   sudo rm        /etc/nginx/sites-enabled/default
   
 Add to enabled sites and make accessible.
-  sudo ln -s     /etc/nginx/sites-available/HOMEctlx  /etc/nginx/sites-enabled/default
-  sudo chmod o+x /etc/uwsgi/apps-enabled/HOMEctlx.ini
+  sudo ln -s     /etc/nginx/sites-available/homectlx  /etc/nginx/sites-enabled/default
+  sudo chmod o+x /etc/uwsgi/apps-enabled/homectlx.ini
 
 Change the maximum body size to allow the upload of big files.
   sudo nano /etc/nginx/nginx.conf
@@ -102,11 +149,21 @@ Bridge address and user name have to be set.
 See lightctl --help.
 
 ## File sharing
-Files in the share directory (/srv/HOMEctlx/share) are shared with everyone who has access to HOMEctlx. You should enable write protection for essential files.
-  chmod -R a-w /srv/HOMEctlx/share/<protected directory>
+Files in the share directory (/srv/homectlx/share) are shared with everyone who has access to the applicaton. You should enable write protection for essential files.
+  chmod -R a-w /srv/homectlx/share/<protected directory>
 You may want to verify the permission change.
-  ls -lR /srv/HOMEctlx/share/<protected directory>
+  ls -lR /srv/homectlx/share/<protected directory>
 The share directory can be changed in config.json.
+
+## Setup authentication
+HOMEctlx requires user authentication to access the application.
+After completing the installation, you must create at least one user account.
+
+The management script supports the following commands:
+  python etc/manage_users.py add <username> <password>         - Add a new user
+  python etc/manage_users.py delete <username>                 - Delete an existing user
+  python etc/manage_users.py list                              - List all users
+  python etc/manage_users.py changepw <username> <newpassword> - Change the password for a user
 
 ## Remarks
 Alternatively, install GUnicorn and adapt the previous installation steps.

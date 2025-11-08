@@ -1,0 +1,72 @@
+{# This file is part of HOMEctlx. Copyright (C) 2024 Christian Rauch.
+    Distributed under terms of the GPL3 license. #}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HOMEctlx - Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="wrapper">
+        <div class="top">
+            <div class="main center indent-4">
+                <div class="container-1 back-1 width-1">
+                    <div class="title-1 center">
+                        <span id="logo" class="title-0">
+                            HOME<sub class="small">ctlx</sub>
+                        </span>
+                    </div>
+                    
+                    <div class="section-body">
+
+                        
+                        {% if error %}
+                        <div class="vspace-1 glow-e">
+                            ⚠ {{ error }}
+                        </div>
+                        {% endif %}
+                        
+                        {% if message %}
+                        <div class="vspace-1 glow-c">
+                            ℹ {{ message }}
+                        </div>
+                        {% endif %}
+                        
+                        <form method="POST" action="{{ url_for('login') }}">
+                            <div class="vspace-1">
+                                <div class="label">Username</div>
+                                <input class="back-3" type="text" id="username" name="username" required autofocus>
+                            </div>
+                            
+                            <div class="vspace-2">
+                                <div class="label">Password</div>
+                                <input class="back-3" type="password" id="password" name="password" required>
+                            </div>
+                            
+                            <div class="vspace-2">
+                                <label>
+                                    <input class="back-3" type="checkbox" id="remember" name="remember" value="yes" checked>
+                                    Remember me for 30 days
+                                </label>
+                            </div>
+                            
+                            <div class="vspace-1">
+                                <br>
+                                <button type="submit" class="action">[&nbsp;Login&nbsp;]</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <div class="info small center">
+                        Copyright (C) 2024 Christian Rauch.<br>
+                        Distributed under terms of the GPL3 license.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
