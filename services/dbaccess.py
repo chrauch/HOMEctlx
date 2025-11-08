@@ -9,9 +9,7 @@ import datetime
 import logging
 import sqlite3
 from sqlite3 import Error
-
 from flask import g, has_request_context
-
 
 log = logging.getLogger(__file__)
 
@@ -25,6 +23,15 @@ def init():
             desc TEXT,
             start TEXT,
             state INTEGER)''', False)
+    
+    execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            password_saltedhash TEXT NOT NULL,
+            permissions TEXT,
+            description TEXT,
+            history TEXT)''', False)
 
 
 def connect():
@@ -119,3 +126,59 @@ def get_task_state(id:int):
     state = states[0]['state']
     state = state_mapping_reverse[state]
     return state
+
+
+# User authentication functions
+def get_user_by_name(name:str):
+    """ Get user by username."""
+    users = execute("SELECT * FROM users WHERE name = ?", True, (name,))
+    if len(users) == 0: return None
+    return dict(users[0])
+
+
+def add_user(name:str, password_hash:str, permissions:str='user', description:str=''):
+    """ Add a new user."""
+    now = datetime.datetime.now().isoformat()
+    history = f"{now}: Created"
+    try:
+        id = execute(
+            """INSERT INTO users (name, password_saltedhash, permissions, description, history) 
+            VALUES (?, ?, ?, ?, ?)""", False, 
+            (name, password_hash, permissions, description, history))
+        return id
+    except Error as e:
+        log.error(f"Failed to add user: {e}")
+        return None
+
+
+def update_user_history(name:str, action:str):
+    """ Update user history, keeping only the last 100 lines."""
+    user = get_user_by_name(name)
+    if user:
+        now = datetime.datetime.now().isoformat()
+        new_entry = f"{now}: {action}"
+        
+        # Get existing history and split into lines
+        history = user.get('history', '')
+        lines = history.split('\n') if history else []
+        
+        # Add new entry
+        lines.append(new_entry)
+        
+        # Keep only the last 100 lines
+        if len(lines) > 100:
+            lines = lines[-100:]
+        
+        # Join back into a single string
+        history = '\n'.join(lines)
+        execute("UPDATE users SET history = ? WHERE name = ?", False, (history, name))
+
+
+def delete_user(name:str):
+    """ Delete a user."""
+    execute("DELETE FROM users WHERE name = ?", False, (name,))
+
+
+def get_all_users():
+    """ Get all users."""
+    return execute("SELECT id, name, permissions, description, history FROM users", True)

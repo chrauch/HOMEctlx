@@ -17,6 +17,9 @@ import re
 import sys
 import zipfile
 
+from flask import session
+import services.dbaccess as dba
+
 
 log = logging.getLogger(__file__)
 mutex = threading.RLock()
@@ -41,7 +44,7 @@ def absolute_path(base_dir, parts:list[str]) -> str:
     path = sanitize([base_dir, *parts])
     path = os.path.realpath(path)
     if os.path.commonprefix((path, base_dir)) != base_dir:
-        log.error(f"Illegal path requested: {path}")
+        log_action(f"Illegal path requested: {path}", True)
         raise Exception("File must be in valid directory")
     return path
 
@@ -95,10 +98,10 @@ def create_file(path:list[str], content):
     if   isinstance(content, str):   mode = "w"
     elif isinstance(content, bytes): mode = "wb"
     else: 
-        log.error(f"Illegal content type: {path}")
+        log_action(f"Illegal content type: {path}", True)
         raise Exception("Content must be a string or bytes.")
     with mutex, open(share_path(path), mode) as f: f.write(content)
-    log.info(f"File created: {path}.")
+    log_action(f"File created: {path}.")
 
 
 def read_file(path:list[str], default:str="") -> str:
@@ -106,7 +109,7 @@ def read_file(path:list[str], default:str="") -> str:
     try:
         with mutex, open(share_path(path), "r") as f: return f.read()
     except Exception as e:
-        log.info(f"File '{path}' could not be read: {e}")
+        log_action(f"File '{path}' could not be read: {e}", True)
         return default
 
 
@@ -159,8 +162,9 @@ def read_directory_meta_data(path: list[str]):
         try:
             files = os.listdir(dir_path)
             meta["files"] = len(files)
-        except OSError:
+        except OSError as e:
             meta["files"] = 0
+            log_action(f"Directory '{path}' could not be read: {e}", True)
 
     return meta
 
@@ -169,7 +173,7 @@ def update_file(path:list[str], content:str, overwrite:bool):
     """ Updates a file (overwrite or append)."""
     mode = "w" if overwrite else "a"
     with mutex, open(share_path(path), mode) as f: f.write(content)
-    log.info(f"File updated: {path}.")
+    log_action(f"File updated: {path}.")
 
 
 def clean_file(path:list[str], remove:Lambda):
@@ -189,14 +193,14 @@ def move_file(path:list[str], path_new:list[str]):
     old = share_path(path)
     new = share_path(path_new)
     with mutex: os.rename(old, new)
-    log.info(f"File moved: {path} -> {path_new}.")
+    log_action(f"File moved: {path} -> {path_new}.")
 
 
 def delete_file(path:list[str]):
     """ Deletes a file."""
     assert_not_essential(path)
     with mutex: os.remove(share_path(path))
-    log.info(f"File deleted: {path}.")
+    log_action(f"File deleted: {path}.")
 
 
 def create_archive(path:list[str]) -> str:
@@ -219,21 +223,21 @@ def create_archive(path:list[str]) -> str:
                     filepath_archive = filepath[path_dir.__str__().__len__():]
                     archive.write(filepath, filepath_archive)
     path_archive_relative = path_archive[len(share_dir)+1:]
-    log.info(f"Archive created: {path_archive_relative}.")
+    log_action(f"Archive created: {path_archive_relative}.")
     return path_archive_relative
 
 
 def create_directory(path:list[str]):
     """ Creates a directory."""
     with mutex: os.mkdir(share_path(path))
-    log.info(f"Directory created: {path}.")
+    log_action(f"Directory created: {path}.")
 
 
 def delete_directory(path:list[str]):
     """ Deletes a directory."""
     assert_not_essential(path)
     with mutex: shutil.rmtree(share_path(path))
-    log.info(f"Directory deleted: {path}.")
+    log_action(f"Directory deleted: {path}.")
 
 
 def move_directory(path:list[str], path_new:list[str]):
@@ -243,7 +247,7 @@ def move_directory(path:list[str], path_new:list[str]):
     old = share_path(path)
     new = share_path(path_new)
     with mutex: shutil.move(old, new)
-    log.info(f"Directory moved: {path} -> {path_new}.")
+    log_action(f"Directory moved: {path} -> {path_new}.")
 
 
 def is_essential(path:list[str]):
@@ -265,4 +269,14 @@ def is_essential(path:list[str]):
 
 def assert_not_essential(path:list[str]):
     """ Checks whether a path can be edited."""
-    if is_essential(path): raise Exception(f"Access denied to '{path}'")
+    if is_essential(path):
+        log_action(f"Access denied to '{path}'", True)
+        raise Exception(f"Access denied to '{path}'")
+
+
+def log_action(msg:str, is_error:bool = False):
+    """ Logs an action."""
+    msg_user = f'[user:{session["uname"]}] {msg}'
+    if is_error: log.error(msg_user)
+    else:        log.info(msg_user)
+    dba.update_user_history(session['uname'], msg)
