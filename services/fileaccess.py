@@ -131,7 +131,7 @@ def read_file_meta_data(path:list[str]):
             os.path.getmtime(file))
         if os.access(file, os.W_OK): meta["readonly"] = False
         if path[-1].find(".") < 0 or \
-            path[-1].split('.')[-1] in ["txt", "json", "yaml", "log"]:
+            path[-1].split('.')[-1] in ["txt", "json", "yaml", "log", "calx"]:
             if bytes < 10000 and read_file(path).count("\n") < 1000:
                 meta["is_text"] = True
         elif path[-1].find(".") > 0:
@@ -255,6 +255,8 @@ def is_essential(path:list[str]):
     target = share_path(path)
     for p in [
             [""],
+            ["calendar"],
+            ["calendar", "global"],
             ["documents"],
             ["documents", "templates"],
             ["ambients"],

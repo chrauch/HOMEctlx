@@ -58,7 +58,7 @@ def _add_intro(forms):
     #date = datetime.now().strftime("%Y-%m-%d")
     #forms.append(m.form(None, None, [
     #    m.label(welcome, "welcome"), m.space(2)], True, False))
-    forms.append(m.form(None, None, [m.space(11)], True, False))
+    forms.append(m.form(None, None, [m.space(13)], True, False))
 
 def _add_help(forms):
     """ Add help."""

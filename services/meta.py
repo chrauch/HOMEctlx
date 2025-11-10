@@ -258,6 +258,13 @@ class label(uielement):
 
 
 @dataclass
+class labelline(uielement):
+    texts:list[str]
+    styles:list[str]=field(default_factory=list)
+    key:str=None
+
+
+@dataclass
 class space(uielement):
     rows:int
 

@@ -11,6 +11,7 @@ import sched
 from threading import Thread
 import time
 from typing import Callable
+from flask import session
 
 
 log = logging.getLogger(__file__)
@@ -59,3 +60,4 @@ def execute_delayed(datetime:datetime, func:Callable, type:str, desc:str):
 def terminate(id):
     """ Terminate the task."""
     dba.clear_tasks([id])
+    log.info(f"Task '{id}' terminated.")

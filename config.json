@@ -4,19 +4,19 @@
     "lightctl_exec_test": "./test/lightctl-test.sh",
     "share_dir": "share",
     "routines": {
+        "date": {
+            "command": "date +'%B %d, %Y' && echo && cal",
+            "exec": {
+                "auto": true,
+                "manual": false
+            }
+        },
         "weather": {
             "command": "curl wttr.in/Mainz?TdAF",
             "desc": "Fetch weather report from wttr.in.",
             "exec": {
                 "auto": false,
                 "manual": true
-            }
-        },
-        "calendar": {
-            "command": "date +'%B %d, %Y' && echo && cal",
-            "exec": {
-                "auto": true,
-                "manual": false
             }
         },
         "synchronize": {

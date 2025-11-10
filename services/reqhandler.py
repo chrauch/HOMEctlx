@@ -10,7 +10,7 @@ import inspect
 from flask import Blueprint, jsonify, render_template, request, send_from_directory
 import services.meta as m
 import services.fileaccess as fa
-from viewmodels import files, start, alarms, ambients, lights, telemetry
+from viewmodels import files, start, alarms, ambients, lights, telemetry, calendar
 
 
 cmdex_pb = Blueprint("cmd", __name__)
@@ -20,7 +20,7 @@ class reqhandler:
     """ Renders the view models."""
 
     modules = {}
-    for m in [start, files, alarms, ambients, lights, telemetry]:
+    for m in [start, files, alarms, ambients, lights, telemetry, calendar]:
         modules[m.__name__.replace('viewmodels.', '')] = m
 
     @cmdex_pb.route("/<vm>/ctl")

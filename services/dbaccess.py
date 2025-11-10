@@ -138,6 +138,9 @@ def get_user_by_name(name:str):
 
 def add_user(name:str, password_hash:str, permissions:str='user', description:str=''):
     """ Add a new user."""
+    if len(name) < 1 or len(password_hash) < 1 or not name.isalnum() or name in ['admin', 'global']:
+        log.error("Failed to add user: Name and password are required, and name must be alphanumeric, not 'admin' or 'global'")
+        return None
     now = datetime.datetime.now().isoformat()
     history = f"{now}: Created"
     try:

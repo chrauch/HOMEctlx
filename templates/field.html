@@ -191,6 +191,13 @@
         {% endfor %}
     </div>
 
+    {% elif field.type() == "labelline" %}
+    <div class="info">
+        {% for text in field.texts %}
+            <span class="{{field.styles[loop.index0]}}">{{text}}</span>
+        {% endfor %}
+    </div>
+
     {% elif field.type() == "space" %}
     {% for r in range(field.rows) %}<br>{% endfor %}
 
