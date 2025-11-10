@@ -62,6 +62,7 @@ def list_users():
     print("-" * 70)
     for user in users:
         print(f"{user['id']:<5} {user['name']:<20} {user['permissions']:<15} {user['description']:<30}")
+        print("--- History ---")
         print(f"{user['history']}")
     print("-" * 70)
 

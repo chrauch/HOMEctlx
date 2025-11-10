@@ -1,3 +1,4 @@
 Flask==2.2.3
 uWSGI==2.0.23
 bcrypt==4.1.2
+itsdangerous==2.1.2

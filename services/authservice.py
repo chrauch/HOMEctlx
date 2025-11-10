@@ -7,12 +7,18 @@ Authentication service for user login, session management, and access control.
 
 import logging
 import bcrypt
-from flask import session, request, redirect, render_template, make_response
+from flask import session, request, redirect, render_template, make_response, current_app
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 
 import services.dbaccess as dba
 
 
 log = logging.getLogger(__file__)
+
+
+def get_serializer():
+    """Get the token serializer using the app's secret key."""
+    return URLSafeTimedSerializer(current_app.secret_key)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
@@ -57,19 +63,33 @@ def restore_session_from_cookie():
     """Try to restore session from remember_token cookie."""
     remember_token = request.cookies.get('remember_token')
     if remember_token:
-        user = dba.get_user_by_name(remember_token)
-        if user:
-            create_session(user, remember=True)
-            log.info(f"User '{user['name']}' session restored from cookie")
-            return True
+        try:
+            # Deserialize and verify the token
+            serializer = get_serializer()
+            uname = serializer.loads(remember_token, max_age=30*24*60*60)
+            
+            user = dba.get_user_by_name(uname)
+            if user:
+                create_session(user, remember=True)
+                log.info(f"User '{user['name']}' session restored from signed cookie")
+                return True
+        except SignatureExpired:
+            log.info("Remember token expired")
+        except BadSignature:
+            log.warning("Invalid remember token signature detected")
+        except Exception as e:
+            log.error(f"Error restoring session from cookie: {e}")
     return False
 
 
 def set_remember_cookie(response, uname: str, max_age: int = 30*24*60*60):
-    """Set the remember me cookie on a response."""
+    """Set the remember me cookie on a response with a signed token."""
+    serializer = get_serializer()
+    token = serializer.dumps(uname)
+    
     response.set_cookie(
         'remember_token', 
-        uname, 
+        token, 
         max_age=max_age,
         httponly=True,
         secure=True,
