@@ -26,11 +26,43 @@ def exec(cmd, type = "dev", parameters = "", brief = True) -> str:
     """ Executes the wrapped LightCtl command."""
     if type == "grp":    cmd += "-group"
     if parameters != "": cmd += " " + parameters
-    log.debug(cmd)
-    result = subprocess.check_output(
-        f"{executable} {cmd} {'--brief' if brief else ''}", shell = True) \
-        .decode("utf-8")
-    return result
+    full_cmd = f"{executable} {cmd} {'--brief' if brief else ''}"
+    
+    try:
+        result = subprocess.run(
+            full_cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            log.error(f"Lightctl command failed: {full_cmd}")
+            log.error(f"Return code: {result.returncode}")
+            log.error(f"STDOUT: {result.stdout}")
+            log.error(f"STDERR: {result.stderr}")
+            raise subprocess.CalledProcessError(
+                result.returncode, 
+                full_cmd, 
+                output=result.stdout, 
+                stderr=result.stderr
+            )
+        
+        return result.stdout
+        
+    except subprocess.TimeoutExpired as e:
+        log.error(f"Lightctl command timeout: {full_cmd}")
+        log.error(f"Timeout after 30 seconds")
+        raise
+    except FileNotFoundError as e:
+        log.error(f"Lightctl executable not found: {executable}")
+        log.error(f"Error: {str(e)}")
+        raise
+    except Exception as e:
+        log.error(f"Unexpected error executing lightctl: {str(e)}")
+        log.error(f"Exception type: {type(e).__name__}")
+        raise
 
 
 def state(type, id) -> State:
