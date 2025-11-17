@@ -10,7 +10,7 @@ from copy import deepcopy
 import re
 import services.meta as m
 import services.fileaccess as fa
-from flask import session
+import services.state as state
 from viewmodels import markdown
 
 
@@ -26,12 +26,13 @@ def ctl(dir:str=None,
 
 
 def set_defaults():
-    for kv in ({
-        'dir': '/',
-        'edit': False,
-        'content': False,
-        'st_idx': False}).items():
-        if kv[0] not in session: session[kv[0]] = kv[1]
+    for key, default in {
+        'files.dir': '/',
+        'files.edit': False,
+        'files.content': False,
+        'files.st_idx': 0}.items():
+        if state.get(key) is None:
+            state.set(key, default)
 
 
 def directory(
@@ -42,34 +43,53 @@ def directory(
     """ Directory related actions."""
 
     if dir != None:
-        session['dir'] = fa.sanitize([dir])
-        session['st_idx'] = 0
-    if edit != None:    session['edit'] = edit in [True, "True"]
-    if content != None: session['content'] = content in [True, "True"]
-    if st_idx != None:  session['st_idx'] = max(int(st_idx), 0)
+        state.set('files.dir', fa.sanitize([dir]))
+        state.set('files.st_idx', 0)
+    if edit != None:    state.set('files.edit', edit in [True, "True"])
+    if content != None: state.set('files.content', content in [True, "True"])
+    if st_idx != None:  state.set('files.st_idx', max(int(st_idx), 0))
     set_defaults()
 
-    files, dirs  = fa.list_files([session['dir']])
+    curr_dir = state.get('files.dir', '/')
+    
+    # Check if directory exists, if not go to root
+    try:
+        files, dirs  = fa.list_files([curr_dir])
+    except:
+        # Directory doesn't exist, reset to root
+        curr_dir = '/'
+        state.set('files.dir', curr_dir)
+        state.set('files.st_idx', 0)
+        files, dirs  = fa.list_files([curr_dir])
 
+    curr_edit = state.get('files.edit', False) in [True, "True"]
+    curr_content = state.get('files.content', False) in [True, "True"]
+    curr_st_idx = int(state.get('files.st_idx', 0))
+    
+    # Validate st_idx is within bounds
+    if curr_st_idx < 0 or curr_st_idx >= len(files):
+        curr_st_idx = 0
+        state.set('files.st_idx', 0)
+    
     forms = []
 
     form_dir = m.form(None, None, [], True, False, "small flex")
 
     # menu
     show_menu = m.execute_params("files/directory", 
-        f"{'hide' if session['edit'] else 'show'} menu",
-        { "content": session['content'] })
-    show_menu.params['edit'] = not session['edit']
+        f"{'hide' if curr_edit else 'show'} menu",
+        { "content": curr_content })
+    show_menu.params['edit'] = not curr_edit
     form_dir.fields.append(show_menu)
         
     # content
     if len(files) > 0:
         show_media = m.execute_params("files/directory", 
-        f"{'hide' if session['content'] else 'show'} media",
-        { "edit": session['edit'] })
-        show_media.params['content'] = not session['content']
+        f"{'hide' if curr_content else 'show'} media",
+        { "edit": curr_edit })
+        show_media.params['content'] = not curr_content
         form_dir.fields.append(show_media)
-        if session['content']:
+        if curr_content:
             form_dir.fields.append(m.execute_params(
                 "files/ctl", "presentation", { "show": True }))
         
@@ -77,56 +97,68 @@ def directory(
     if len(form_dir.fields) > 0: 
         forms.append(form_dir)
     
-    if session['edit']: forms += directory_edit_fields(files)
+    if curr_edit: forms += directory_edit_fields(files)
 
     # list sub directories
-    if len(dirs) > 0 or session['dir'] != '/':
+    if len(dirs) > 0 or curr_dir != '/':
         dirs_content = []
-        if session['dir'] != '/':
+        if curr_dir != '/':
             dirs_content.append(m.dir("files/directory",
-                fa.sanitize([session['dir'], '..']), "..", False, 0))
+                fa.sanitize([curr_dir, '..']), "..", False, 0))
         for d in dirs:
-            if session['edit']:
-                meta = fa.read_directory_meta_data([session['dir'], d])
+            if curr_edit:
+                meta = fa.read_directory_meta_data([curr_dir, d])
                 locked = meta['readonly']
                 cnt =  meta['files']
             else:
                 locked = False
                 cnt = 0
             dirs_content.append(m.dir("files/directory",
-                session['dir'], d, locked, cnt))
+                curr_dir, d, locked, cnt))
         forms.append(m.form("d", "directories", dirs_content, True))
 
     # list files
-    forms += directory_files(session['st_idx'])
+    forms += directory_files(curr_st_idx)
 
-    #if session['edit']:
+    #if curr_edit:
     #    forms[0].fields.append(
-    #        m.label(f"directory: share{session['dir']}".strip('/')))
+    #        m.label(f"directory: share{curr_dir}".strip('/')))
         
     return [m.view("_body", f"share", forms),
-            m.header([_path_triggers(session['dir'])])]
+            m.header([_path_triggers(curr_dir)])]
 
 
 def directory_files(st_idx:int):
     """ Directory files."""
-    files, dirs  = fa.list_files([session['dir']])
-    session['st_idx'] = max(int(st_idx), 0)
-    page_sz = 10
+    curr_dir = state.get('files.dir', '/')
+    files, dirs  = fa.list_files([curr_dir])
+    
+    # Validate and set st_idx
+    st_idx = max(int(st_idx), 0)
     files_sz = len(files)
-    files = files[session['st_idx']:session['st_idx']+page_sz]
+    page_sz = 10
+    
+    # Ensure st_idx is within valid range
+    if st_idx >= files_sz and files_sz > 0:
+        st_idx = 0
+    
+    state.set('files.st_idx', st_idx)
+    curr_st_idx = st_idx
+    files = files[curr_st_idx:curr_st_idx+page_sz]
     forms = list()
     if len(files) > 0:
+        curr_edit = state.get('files.edit', False) in [True, "True"]
+        curr_content = state.get('files.content', False) in [True, "True"]
         pager_top = m.pager("files/directory_files", "st_idx", 
-            session['st_idx'], page_sz, files_sz, "f", False)
+            curr_st_idx, page_sz, files_sz, "f", False)
         files_content = []
-        if session['edit'] or session['content']:
+        if curr_edit or curr_content:
             files_content.append(pager_top)
             files_content.append(m.label(f"{files_sz} files"))
         for f in files: 
             files_content += file_fields(f)
         pager_bottom = deepcopy(pager_top)
-        pager_bottom.focus = session['edit'] or session['content']
+        pager_bottom.focus = curr_edit or curr_content
         files_content.append(pager_bottom)
         forms.append(m.form("f", "files", files_content, True))
     return forms
@@ -194,8 +226,9 @@ def directory_edit_fields(files:list):
     forms.append(form_rmdir)
 
     # move directory
+    curr_dir = state.get('files.dir', '/')
     form_mvdir = m.form(None, "move directory", [
-            m.text("dir_new", session['dir'], "new:"),
+            m.text("dir_new", curr_dir, "new:"),
             m.execute("files/move_directory", "move directory",
                 confirm="Do you want to move this directory?")
         ], style='small')
@@ -208,23 +241,27 @@ def directory_edit_fields(files:list):
 
 def filex(file:str, dir:str=None, content:bool=None, editx:bool=None):
     """ File related actions."""
-    if editx != None:   session['edit'] = editx in ['True', True]
-    if content != None: session['content'] = content in ['True', True]
-    if dir != None:     session['dir'] = dir
+    if editx != None:   state.set('files.edit', editx in ['True', True])
+    if content != None: state.set('files.content', content in ['True', True])
+    if dir != None:     state.set('files.dir', dir)
     set_defaults()
-    return [*edit(file), m.header([_path_triggers(session['dir'])])]
+    curr_dir = state.get('files.dir', '/')
+    return [*edit(file), m.header([_path_triggers(curr_dir)])]
 
 
 def file_fields(file:str):
     """ Content fields."""
+    curr_dir = state.get('files.dir', '/')
+    curr_edit = state.get('files.edit', False) in [True, "True"]
+    curr_content = state.get('files.content', False) in [True, "True"]
     fields = []
-    link = fa.sanitize([session['dir'], file])
-    if session['edit'] or session['content']:
-        meta = fa.read_file_meta_data([session['dir'], file])
-    locked = session['edit'] and meta["readonly"]
+    link = fa.sanitize([curr_dir, file])
+    if curr_edit or curr_content:
+        meta = fa.read_file_meta_data([curr_dir, file])
+    locked = curr_edit and meta["readonly"]
     fields.append(m.file("files/edit",
-        session['dir'], file, locked, link))
-    if session['content']:
+        curr_dir, file, locked, link))
+    if curr_content:
         _file_content(link, meta, fields, file)
         fields.append(m.space(1))
     return fields
@@ -232,16 +269,17 @@ def file_fields(file:str):
 
 def edit(file) -> list[m.form]:
     """ File edit commands."""
+    curr_dir = state.get('files.dir', '/')
     forms = [m.form(None, None, [m.dir("files/directory", 
-        fa.sanitize([session['dir']]), "..", False, 0)], True, False)] 
+        fa.sanitize([curr_dir]), "..", False, 0)], True, False)] 
 
     file_hidden = m.hidden("file", file)
 
-    files, _ = fa.list_files([session['dir']])
-    link = fa.sanitize([session['dir'], file])
+    files, _ = fa.list_files([curr_dir])
+    link = fa.sanitize([curr_dir, file])
     download = m.download(link)
 
-    meta = fa.read_file_meta_data([session['dir'], file])
+    meta = fa.read_file_meta_data([curr_dir, file])
     meta_info = m.label(
         f"last change: {meta['changed']} / bytes: {meta['size']}", "small")
 
@@ -258,7 +296,7 @@ def edit(file) -> list[m.form]:
 
     else:
 
-        content = fa.read_file([session['dir'], file])
+        content = fa.read_file([curr_dir, file])
         
         forms.append(
             m.form("uf", "edit content", [
@@ -269,7 +307,7 @@ def edit(file) -> list[m.form]:
             ], True))
         
         has_remove_and_import = not meta["is_markdown"] \
-            and not fa.is_essential([session['dir'], file])
+            and not fa.is_essential([curr_dir, file])
 
         if has_remove_and_import:
 
@@ -282,9 +320,9 @@ def edit(file) -> list[m.form]:
                     m.execute("files/remove_entries", "remove")
                 ]))
             
-            files, _       = fa.list_files([session['dir']], True)
+            files, _       = fa.list_files([curr_dir], True)
             files          = [f for f in files \
-                if f != file and fa.read_file_meta_data([session['dir'], f])["is_text"]]
+                if f != file and fa.read_file_meta_data([curr_dir, f])["is_text"]]
             files_template = [f for f in files if f.startswith("template/")]
             files_rest     = [f for f in files if f not in files_template]
             files          = [*files_template, * files_rest]
@@ -297,7 +335,7 @@ def edit(file) -> list[m.form]:
                         m.execute("files/template"),
                     ]))
             
-    if not fa.is_essential([session['dir'], file]):
+    if not fa.is_essential([curr_dir, file]):
         forms.append(
             m.form("mf", "move file", [
                 file_hidden,
@@ -311,33 +349,35 @@ def edit(file) -> list[m.form]:
                     confirm="Do you want to delete this file?")
             ]))
     
-    path = f"share/{session['dir'].strip('/')}/{file}"
+    path = f"share/{curr_dir.strip('/')}/{file}"
     forms[0].fields.append(m.label(f"file: {path}", 'small'))
     return [m.view("_body", f"share", forms)]
 
 
 def _file_content(link:str, meta:dict, fields:list, file:str):
     """ File content."""
+    curr_dir = state.get('files.dir', '/')
     if not meta["is_text"]:
         if   meta["is_image"]:    fields.append(m.media(link, "image"))
         elif meta["is_video"]:    fields.append(m.media(link, "video"))
         elif meta["is_pdf"]:      fields.append(m.media(link, "pdf"))
-        elif meta["is_markdown"]: fields.append(markdown.for_file(session['dir'], file))
+        elif meta["is_markdown"]: fields.append(markdown.for_file(curr_dir, file))
     else:
-        text = fa.read_file([session['dir'], file])
+        text = fa.read_file([curr_dir, file])
         fields.append(m.text_big_ro('', text))
 
 
 def showx(file_idx:str):
     """ Show."""
+    curr_dir = state.get('files.dir', '/')
     file_idx = int(file_idx)
     fields = []
-    files = fa.list_files([session['dir']])
+    files = fa.list_files([curr_dir])
     if file_idx >= len(files[0]): file_idx = 0
     elif file_idx < 0: file_idx = len(files[0]) -1
     file = files[0][file_idx]
-    link = fa.sanitize([session['dir'], file])
-    meta = fa.read_file_meta_data([session['dir'], file])
+    link = fa.sanitize([curr_dir, file])
+    meta = fa.read_file_meta_data([curr_dir, file])
     _file_content(link, meta, fields, file)
     if len(fields) == 0: fields.append(m.label(file))
     else: fields[0].style = "fill"
@@ -349,8 +389,9 @@ def showx(file_idx:str):
 
 def template(file:str, templates:list[str]):
     """ Fills the file with the lines contained in other files."""
+    curr_dir = state.get('files.dir', '/')
     lines = [l for f in templates for l in \
-             fa.clean_lines(fa.read_file([session['dir'], f]))]
+             fa.clean_lines(fa.read_file([curr_dir, f]))]
     lines = m.choice.makelist(lines)
     forms = [
         m.form(
@@ -366,68 +407,78 @@ def template(file:str, templates:list[str]):
 
 def add_entries(file:str, lines:list=[]):
     """ Add lines."""
+    curr_dir = state.get('files.dir', '/')
     if len(lines) > 0: 
         content = "\n".join(lines)
-        if not fa.read_file([session['dir'], file]).endswith("\n"):
+        if not fa.read_file([curr_dir, file]).endswith("\n"):
             content = f"\n{content}"
-        fa.update_file([session['dir'], file], content, False)
-    return ctl(session['dir'], file)
+        fa.update_file([curr_dir, file], content, False)
+    return ctl(curr_dir, file)
 
 
 def remove_entries(file:str, remove:list[str]):
     """ Remove entries."""
+    curr_dir = state.get('files.dir', '/')
     if len(remove) > 0:
-        fa.clean_file([session['dir'], file], lambda line: line in remove)
-    return ctl(session['dir'], file)
+        fa.clean_file([curr_dir, file], lambda line: line in remove)
+    return ctl(curr_dir, file)
 
 
 def update_file(file:str, content:list):
     """ Edit file."""
-    fa.update_file([session['dir'], file], content, True)
-    return ctl(session['dir'], file)
+    curr_dir = state.get('files.dir', '/')
+    fa.update_file([curr_dir, file], content, True)
+    return [*ctl(curr_dir, file), m.notification(f"File {file} saved.")]
 
 
 def create_file(file:str, content:str):
     """ Create file."""
+    curr_dir = state.get('files.dir', '/')
     if file == "": return [m.error("No file name specified.")]
-    fa.create_file([session['dir'], file], content)
-    return ctl(session['dir'], file)
+    fa.create_file([curr_dir, file], content)
+    return ctl(curr_dir, file)
 
 
 def create_directory(dir_new:str=None):
     """ Create directory."""
-    fa.create_directory([session['dir'], dir_new])
-    return directory(fa.sanitize([session['dir'], dir_new]))
+    curr_dir = state.get('files.dir', '/')
+    fa.create_directory([curr_dir, dir_new])
+    return directory(fa.sanitize([curr_dir, dir_new]))
 
 
 def delete_file(file:str):
     """ Delete file."""
-    fa.delete_file([session['dir'], file])
+    curr_dir = state.get('files.dir', '/')
+    fa.delete_file([curr_dir, file])
     return directory()
 
 
 def delete_directory():
     """ Delete file."""
-    fa.delete_directory([session['dir']])
-    return directory("/".join(session['dir'].split("/")[:-1]))
+    curr_dir = state.get('files.dir', '/')
+    fa.delete_directory([curr_dir])
+    return directory("/".join(curr_dir.split("/")[:-1]))
 
 
 def move_file(file:str, file_new:str):
     """ Move file."""
+    curr_dir = state.get('files.dir', '/')
     if file_new == "": return [m.error("No file name specified.")]
-    fa.move_file([session['dir'], file], [session['dir'], file_new])
+    fa.move_file([curr_dir, file], [curr_dir, file_new])
     return directory()
 
 
 def move_directory(dir_new:str):
     """ Move directory."""
+    curr_dir = state.get('files.dir', '/')
     if dir_new == "": return [m.error("No file name specified.")]
-    fa.move_directory([session['dir']], [dir_new])
+    fa.move_directory([curr_dir], [dir_new])
     return directory(dir_new)
 
 
 def upload_file(rename:str, upload):
     """ Saves an uploaded file."""
+    curr_dir = state.get('files.dir', '/')
     names  = upload["names"]
     for i, dataurl in enumerate(upload["bytes"]):
         bytes = base64.b64decode(dataurl.split(",")[1])
@@ -439,7 +490,7 @@ def upload_file(rename:str, upload):
                 name += "." + names[i].split(".")[-1]
         else:
             name = names[i]
-        fa.create_file([session['dir'], name], bytes)
+        fa.create_file([curr_dir, name], bytes)
     return directory()
 
 

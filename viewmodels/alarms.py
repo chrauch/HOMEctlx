@@ -6,10 +6,12 @@ View-model for alarms and timers.
 """
 
 from datetime import datetime, timedelta
+import json
 import services.lightctlwrapper as lw
 import services.scheduler as sd
 from services.lightstates import States
 import services.meta as m
+import services.state as state
 
 
 def ctl() -> list[m.view]:
@@ -19,10 +21,28 @@ def ctl() -> list[m.view]:
     states = States('\n'.join(states_txt.split('\n')[1:]))
     names = sorted([s.name for s in states.items])
 
-    default = datetime.now() + timedelta(hours=8)
+    # Load saved preferences from state
+    saved_devices_json = state.get('alarms.devices', '[]')
+    try:
+        saved_devices_names = json.loads(saved_devices_json)
+    except:
+        saved_devices_names = []
+    
+    saved_timer_minutes = int(state.get('alarms.timer_minutes', 10))
+    
+    saved_alarm_time = state.get('alarms.alarm_time')
+    if saved_alarm_time:
+        default_time = saved_alarm_time
+    else:
+        default = datetime.now() + timedelta(hours=8)
+        default_time = default.time().strftime("%H:%M")
 
+    # Convert saved device names to choice objects for select_many
+    all_choices = list(map(lambda d: m.choice(d), names))
+    saved_devices_choices = [c for c in all_choices if c.value in saved_devices_names]
+    
     select_devices = m.select_many("devices", \
-        list(map(lambda d: m.choice(d), names)), [], "devices")
+        all_choices, saved_devices_choices, "devices")
 
     now = f"Server time:\n{datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
@@ -34,11 +54,11 @@ def ctl() -> list[m.view]:
         m.form("timer", "set", [
             select_devices,
             m.space(2),
-            m.integer("minutes", 10, "set timer (minutes)"),
+            m.integer("minutes", saved_timer_minutes, "set timer (minutes)"),
             #m.select("minutes", list(map(lambda i: m.choice(i), mins)), None, "set timer (minutes)"),
             m.execute_params("alarms/set", "set", {"method" : "timer"}),
             m.space(2),
-            m.time("time", default.time().strftime("%H:%M"), "set alarm (hh:mm)"),
+            m.time("time", default_time, "set alarm (hh:mm)"),
             m.execute_params("alarms/set", "set", {"method" : "alarm"}),
         ], True))
     
@@ -47,6 +67,12 @@ def ctl() -> list[m.view]:
 
 def set(method:str, time:str, minutes:int, devices:list[str]):
     if len(devices) == 0: return [m.error("Select at least one device.")]
+    
+    # Save preferences to state
+    state.set('alarms.devices', json.dumps(devices))
+    state.set('alarms.timer_minutes', int(minutes))
+    state.set('alarms.alarm_time', time)
+    
     if method == 'timer': _set_timer(int(minutes), devices)
     else: _set_alarm(time, devices)
     return scheduled()

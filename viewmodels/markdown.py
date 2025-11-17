@@ -9,7 +9,6 @@ import logging
 import re
 import services.meta as m
 import services.fileaccess as fa
-from flask import session
 
 from typing import Generator
 
