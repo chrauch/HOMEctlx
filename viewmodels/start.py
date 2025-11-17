@@ -12,8 +12,9 @@ import services.meta as m
 import services.fileaccess as fa
 import services.routines as rou
 import services.scheduler as sd
+import services.calmgr as cm
 from viewmodels import markdown
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 
 
@@ -24,6 +25,7 @@ def ctl() -> list[m.view]:
     _add_md(forms)
     _add_cmds(forms)
     _add_tasks(forms)
+    _add_agenda(forms)
     _add_help(forms)
     return [m.view("_body", "", forms)]
 
@@ -129,6 +131,57 @@ def _add_cmds(forms:list):
             fields.append(m.autoupdate("start/exec", 0, { "key": key }))
         if cmd["exec"]["manual"]:
             fields.append(m.execute_params("start/exec", params={ "key": key }))
+
+
+def _add_agenda(forms:list):
+    """ Add agenda for today and tomorrow."""
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow = today + timedelta(days=2)  # Today and tomorrow = 2 days range
+    
+    # Get events for today and tomorrow
+    events = cm.get_events(today, tomorrow, days_ahead=2)
+    
+    # Group events by date
+    events_by_date = {}
+    for event in events:
+        date_key = event.date.strftime('%Y-%m-%d %A')
+        if date_key not in events_by_date:
+            events_by_date[date_key] = []
+        events_by_date[date_key].append(event)
+    
+    fields = []
+    
+    if len(events) == 0:
+        fields.append(m.label("No events today or tomorrow", "info"))
+    else:
+        # List events grouped by date
+        for date_key in sorted(events_by_date.keys()):
+            date_events = events_by_date[date_key]
+            
+            fields.append(m.label(f"{date_key}", "title-2"))
+            
+            for event in date_events:
+                recurring_text = ""
+                if event.recurring:
+                    recurring_text = f"[{event.recurring}"
+                    if event.end_date:
+                        recurring_text += f",end:{event.end_date.strftime('%Y-%m-%d')}"
+                    recurring_text += "] "
+                source_text = f"[{event.source.replace('/', ' > ')}]"
+                # Replace newlines with backslash for single-line display
+                display_description = event.description.replace('\n', ' \\ ')
+                
+                event_table = m.table(rows=[
+                    [m.label(display_description, "")],
+                    [m.label(recurring_text + source_text, "small inactive")]
+                ])
+                fields.append(event_table)
+    
+    # Open if there are events
+    is_open = len(events) > 0
+    
+    forms.append(m.form(None, "Agenda", fields, is_open, True, 
+                        details=f"📅 upcoming events: {len(events)}"))
 
 
 def exec(key:str):
