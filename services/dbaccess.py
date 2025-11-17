@@ -32,12 +32,23 @@ def init():
             permissions TEXT,
             description TEXT,
             history TEXT)''', False)
+    
+    execute('''
+        CREATE TABLE IF NOT EXISTS state (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userid INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT,
+            FOREIGN KEY (userid) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(userid, key))''', False)
 
 
 def connect():
     """ Open the connection."""
     dbaccess = sqlite3.connect("data.db", check_same_thread=False)
     dbaccess.row_factory = sqlite3.Row  # rows as dictionaries
+    # Enable foreign key constraints
+    dbaccess.execute("PRAGMA foreign_keys = ON")
     return dbaccess
 
 
@@ -178,10 +189,33 @@ def update_user_history(name:str, action:str):
 
 
 def delete_user(name:str):
-    """ Delete a user."""
-    execute("DELETE FROM users WHERE name = ?", False, (name,))
+    """ Delete a user. State entries are automatically deleted via CASCADE."""
+    user = get_user_by_name(name)
+    if user:
+        execute("DELETE FROM users WHERE name = ?", False, (name,))
 
 
 def get_all_users():
     """ Get all users."""
     return execute("SELECT id, name, permissions, description, history FROM users", True)
+
+
+# State management functions
+def get_state_value(userid:int, key:str):
+    """ Get a state value for a user."""
+    result = execute("SELECT value FROM state WHERE userid = ? AND key = ?", True, (userid, key))
+    if len(result) == 0: return None
+    return result[0]['value']
+
+
+def set_state_value(userid:int, key:str, value:str):
+    """ Set a state value for a user. Creates or updates the entry."""
+    # Try to update first
+    execute("DELETE FROM state WHERE userid = ? AND key = ?", False, (userid, key))
+    # Insert new value
+    execute("INSERT INTO state (userid, key, value) VALUES (?, ?, ?)", False, (userid, key, value))
+
+
+def get_all_state_for_user(userid:int):
+    """ Get all state entries for a user."""
+    return execute("SELECT key, value FROM state WHERE userid = ? ORDER BY key", True, (userid,))
