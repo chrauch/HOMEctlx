@@ -1,0 +1,21 @@
+[Unit]
+Description=HOMEctlx Gunicorn Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=chris
+WorkingDirectory=/srv/homectlx
+Environment="PATH=/srv/homectlx/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+# Inherit user's environment to ensure network access
+Environment="HOME=/home/chris"
+ExecStart=/srv/homectlx/.venv/bin/gunicorn --config /srv/homectlx/etc/homectlx_gunicorn.py app:app
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=false
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

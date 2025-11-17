@@ -10,6 +10,7 @@ import logging
 import secrets
 from datetime import timedelta
 from flask import Flask, redirect, request
+from flask_socketio import SocketIO
 
 import services.fileaccess as fa
 import services.dbaccess as dba
@@ -19,11 +20,23 @@ import services.routines as rou
 import services.scheduler as sch
 import services.authservice as auth
 from services.reqhandler import cmdex_pb
+import services.reqhandler as reqhandler
 
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+# WebSocket connections use Flask's session management
+# Configure with longer timeouts and ping settings to reduce connection churn
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins=[], 
+    async_mode='threading',
+    ping_timeout=60,
+    ping_interval=25,
+    logger=False,
+    engineio_logger=False
+)
 log = logging.getLogger(__file__)
 
 
@@ -53,6 +66,32 @@ def create_app(app):
     rou.init(app.config["routines"])
     
     app.register_blueprint(cmdex_pb)
+    
+    # Register WebSocket handlers
+    reqhandler.socketio = socketio
+    
+    @socketio.on('connect')
+    def handle_connect(data = None):
+        """ Verify authentication on WebSocket connection."""
+        if not auth.is_authenticated():
+            log.warning("Unauthorized WebSocket connection attempt")
+            return False  # Reject connection
+        #log.info(f"WebSocket connection established for user: {auth.get_current_user().get('uname', 'unknown')}")
+        return True
+    
+    @socketio.on('disconnect')
+    def handle_disconnect(data = None):
+        """ Handle WebSocket disconnection."""
+        #log.info("WebSocket disconnected")
+    
+    @socketio.on('execute')
+    def handle_execute(data = None):
+        """ Handle WebSocket execute events."""
+        # Double-check authentication for each request
+        if not auth.is_authenticated():
+            log.warning("Unauthorized execute attempt via WebSocket")
+            return
+        reqhandler.reqhandler.handle_execute(data)
 
     @app.route('/')
     def index(): return redirect('start/ctl')
@@ -95,9 +134,20 @@ def after_request(exception):
 def before_request():
     """ Acquire resources before the request and check authentication."""
     dba.connect_cached()
+    
+    # Socket.IO requests need special handling - authentication is checked
+    # at the WebSocket connection level, not at the HTTP request level
+    if request.path.startswith('/socket.io/'):
+        if not auth.is_authenticated():
+            return redirect('/login')
+        return None
+    
     return auth.require_authentication()
 
 
 create_app(app)
 
-if __name__ == "__main__": app.run()
+if __name__ == "__main__": 
+    import os
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    socketio.run(app, debug=debug_mode)

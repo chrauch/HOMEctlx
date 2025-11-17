@@ -3,11 +3,16 @@
 
 /*
 Handles view-model functionalities, collects arguments entered in fields, and  
-calls server functions.
+calls server functions via WebSocket.
 */
 
+let socket = null;
+
 document.addEventListener('DOMContentLoaded', function() {
+    initializeWebSocket();
     initialize();
+    
+    processNotifications();
 
     // react to command
     document.addEventListener("click", function(event) {
@@ -47,18 +52,84 @@ document.addEventListener('DOMContentLoaded', function() {
             }, 1000);
         }
     });
+
+    // Show details on click
+    document.addEventListener("click", function(event) {
+        // Don't show details if clicking on an execute button
+        if (event.target.closest(".execute")) return;
+        
+        const el = event.target.closest("[data-details]");
+        if (!el) return;
+        const details = el.dataset.details;
+        if (details && details.trim() !== "") {
+            alert(details);
+        }
+    });
 });
+
+// Initialize WebSocket connection
+function initializeWebSocket() {
+    // Check if Socket.IO is loaded
+    if (typeof io === 'undefined') {
+        console.error('Socket.IO library not loaded');
+        setTimeout(initializeWebSocket, 100);
+        return;
+    }
+    
+    // Configure Socket.IO with reconnection settings
+    socket = io({
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 10
+    });
+    
+    socket.on('connect', function() {
+        console.log('WebSocket connected');
+    });
+    
+    socket.on('disconnect', function() {
+        console.log('WebSocket disconnected');
+    });
+    
+    socket.on('response', function(views) {
+        Object.keys(views).forEach(key => {
+            const element = document.getElementById(key);
+            if (element) {
+                element.outerHTML = views[key];
+                handleAutoUpdate(key);
+            } else if (key === '_notification') {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = views[key];
+                document.body.appendChild(tempDiv);
+            }
+        });
+        
+        processNotifications();
+        enable(true);
+    });
+    
+    socket.on('connect_error', function(error) {
+        console.error('WebSocket connection error:', error);
+        enable(true);
+    });
+}
 
 function process(sourceElement) {
     if (document.querySelectorAll(".execute.inactive").length > 0) return;
     
-    const func = sourceElement.dataset.func;
+    const funcPath = sourceElement.dataset.func;
     const form = sourceElement.closest("form");
     const fieldset1 = sourceElement.closest("fieldset");
     const fieldset2 = sourceElement.closest(".fieldset");
 
     let wait = false;
     const args = {};
+    
+    // Extract vm and func from the func path (e.g., "start/ctl")
+    const parts = funcPath.split('/');
+    const vm = parts[0];
+    const func = parts[1] || 'ctl';
     
     [form, fieldset1, fieldset2].forEach(function(container) {
         if (!container) return;
@@ -125,14 +196,14 @@ function process(sourceElement) {
 
     function waitAndExecute() {
         if (!wait) {
-            execute(func, args);
+            execute(vm, func, args);
         } else {
             // TODO: progress visualization
             setTimeout(waitAndExecute, 1000);
         }
     }
 
-    waitAndExecute(func, args);
+    waitAndExecute();
 }
 
 // initialize module (extract view-model, function, and arguments from the URL)
@@ -140,7 +211,8 @@ function initialize() {
     enable(false);
 
     const parts = window.location.pathname.split('/');
-    const func = `${parts[1]}/${parts[2]}`;
+    const vm = parts[1];
+    const func = parts[2];
 
     const params = {};
     const searchParams = new URLSearchParams(window.location.search);
@@ -148,31 +220,35 @@ function initialize() {
         params[key] = value;
     });
 
-    execute(func, params);
+    execute(vm, func, params);
 }
 
-// execute a command and refresh view
-function execute(func, args) {
-    // execute the command
-    fetch(`/${func}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(args)
-    })
-    .then(response => response.json())
-    .then(views => {
-        Object.keys(views).forEach(key => {
-            const element = document.getElementById(key);
-            if (element) {
-                element.outerHTML = views[key];
-                handleAutoUpdate(key);
-            }
+// execute a command and refresh view via WebSocket
+function execute(vm, func, args) {
+    if (!socket) {
+        console.error("WebSocket not initialized");
+        enable(true);
+        return;
+    }
+    
+    // If not connected, wait for connection
+    if (!socket.connected) {
+        console.log("Waiting for WebSocket connection...");
+        socket.once('connect', function() {
+            socket.emit('execute', {
+                vm: vm,
+                func: func,
+                args: args
+            });
         });
-        enable(true);
-    })
-    .catch(error => {
-        console.error("Error during execution:", error);
-        enable(true);
+        return;
+    }
+    
+    // Send command via WebSocket
+    socket.emit('execute', {
+        vm: vm,
+        func: func,
+        args: args
     });
 }
 
@@ -191,6 +267,18 @@ function handleAutoUpdate(key) {
                 process(elem);
             }, delay);
         });
+}
+
+// process notifications and show alerts
+function processNotifications() {
+    const notifications = document.querySelectorAll('[data-alert]');
+    notifications.forEach(elem => {
+        const message = elem.dataset.alert;
+        if (message && message.trim() !== "") {
+            alert(message);
+        }
+        elem.remove();
+    });
 }
 
 // enable or disable controls   

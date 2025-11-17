@@ -15,45 +15,52 @@ Install Flask and WSGI components.
   python3 -m pip install -r ./etc/requirements.txt
 Environments are not portable, create them in place.
 
-## Install, configure, and run the WSGI server
-Install uWSGI using the package manager of your system.
-  sudo [apt-get|dnf|...] install uwsgi
-  sudo [apt-get|dnf|...] install uwsgi-plugin-python3
+## Install, configure, and run Gunicorn
+Note: HOMEctlx uses Flask-SocketIO for WebSocket communication. Gunicorn with gevent 
+worker is required because uWSGI does not support WebSocket protocol upgrades properly.
+The WebSocket protocol requires special HTTP Upgrade headers that uWSGI cannot handle,
+causing connection failures (wss:// errors) when deployed behind Nginx with HTTPS.
 
-Run the WSGI server to test the setup so far.
-  uwsgi --ini /srv/homectlx/etc/homectlx.uwsgi.ini
-Open http://localhost:5010 in a browser and check if it works. 
-Kill the process afterwards.
+Gunicorn and gevent are already included in requirements.txt and should be installed.
+Verify installation:
+  source .venv/bin/activate
+  pip list | grep -E "gunicorn|gevent"
+
+Test the application server:
+  cd /srv/homectlx
+  source .venv/bin/activate
+  gunicorn --config ./etc/homectlx_gunicorn.py app:app
+
+Open http://localhost:5010 in a browser and check if it works.
+Press Ctrl+C to stop the test server.
 Note: After Nginx is configured, access will be via https://localhost (or your server IP).
 
-Configure the WSGI server by creating the configuration file.
-See ./etc/homectlx.uwsgi.ini. 
-  sudo nano /etc/uwsgi/apps-available/homectlx.ini
-    [uwsgi]
-    plugins      = python3
-    socket       = 127.0.0.1:5010
-    chdir        = /srv/homectlx
-    protocol     = http
-    wsgi-file    = app.py
-    callable     = app
-    processes    = 4
-    threads      = 2
-    buffer-size  = 32768
-    stats        = 127.0.0.1:9191
-    virtualenv   = /srv/homectlx/.venv
-    http-timeout = 86400
-    uid          = chris
+Configure Gunicorn as a systemd service:
+  sudo cp /srv/homectlx/etc/homectlx.service /etc/systemd/system/
 
-You may be required to add the plug-in directory
-  plugin-dir = /usr/lib64/uwsgi
-Change the values for chdir and uid. Your directory structure may differ.
+Adjust the service file if needed (user, paths):
+  sudo nano /etc/systemd/system/homectlx.service
+  
+Key settings to verify:
+  User=chris              (change to your username)
+  WorkingDirectory=/srv/homectlx
+  Environment="PATH=/srv/homectlx/.venv/bin"
+  ExecStart=/srv/homectlx/.venv/bin/gunicorn --config /srv/homectlx/etc/homectlx_gunicorn.py app:app
 
-Add to enabled sites.
-  sudo ln -s /etc/uwsgi/apps-available/homectlx.ini /etc/uwsgi/apps-enabled
+The Gunicorn configuration file is at ./etc/homectlx_gunicorn.py
+You may adjust settings like worker_connections or logging paths:
+  nano /srv/homectlx/etc/homectlx_gunicorn.py
 
-Enable and (re)start.
-  sudo systemctl enable uwsgi
-  sudo systemctl start uwsgi
+Reload systemd and enable the service:
+  sudo systemctl daemon-reload
+  sudo systemctl enable homectlx
+  sudo systemctl start homectlx
+
+Check service status:
+  sudo systemctl status homectlx
+
+View logs:
+  sudo journalctl -u homectlx -f
 
 ## Generate self-signed SSL certificate for HTTPS
 Since this application runs on a local network only, create a self-signed certificate.
@@ -84,47 +91,15 @@ s
 Install Nginx using the package manager of your system.
   sudo [apt-get|dnf|...] install nginx
 
-Configure the reverse proxy for HTTPS-only access.
-  sudo nano /etc/nginx/sites-available/homectlx
-    server {
-        listen 80 default_server;
-        listen [::]:80 default_server;
-        server_name _;
-        
-        # Redirect all HTTP traffic to HTTPS
-        return 301 https://$host$request_uri;
-    }
-
-    server {
-        listen 443 ssl default_server;
-        listen [::]:443 ssl default_server;
-
-        # SSL certificate configuration
-        ssl_certificate /etc/ssl/homectlx/server.crt;
-        ssl_certificate_key /etc/ssl/homectlx/server.key;
-
-        # SSL security settings
-        ssl_protocols TLSv1.2 TLSv1.3;
-        ssl_prefer_server_ciphers on;
-        ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
-        ssl_session_cache shared:SSL:10m;
-        ssl_session_timeout 10m;
-
-        location / {
-            proxy_pass http://localhost:5010;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-    }
+Configure the reverse proxy for HTTPS-only access with WebSocket support.
+Copy the provided configuration:
+  sudo cp /srv/homectlx/etc/nginx-websocket.conf /etc/nginx/sites-available/homectlx
 
 You might need to remove the default configuration if conflicting.
-  sudo rm        /etc/nginx/sites-enabled/default
+  sudo rm /etc/nginx/sites-enabled/default
   
-Add to enabled sites and make accessible.
-  sudo ln -s     /etc/nginx/sites-available/homectlx  /etc/nginx/sites-enabled/default
-  sudo chmod o+x /etc/uwsgi/apps-enabled/homectlx.ini
+Add to enabled sites:
+  sudo ln -s /etc/nginx/sites-available/homectlx /etc/nginx/sites-enabled/default
 
 Change the maximum body size to allow the upload of big files.
   sudo nano /etc/nginx/nginx.conf
@@ -139,7 +114,7 @@ Test the configuration.
 
 Enable and (re)start.
   sudo systemctl enable nginx
-  sudo systemctl start nginx
+  sudo systemctl reload nginx
 
 ## Enable lightctl
 Make the lightctl test scripts executable.
@@ -164,6 +139,3 @@ The management script supports the following commands:
   python etc/manage_users.py delete <username>                 - Delete an existing user
   python etc/manage_users.py list                              - List all users
   python etc/manage_users.py changepw <username> <newpassword> - Change the password for a user
-
-## Remarks
-Alternatively, install GUnicorn and adapt the previous installation steps.
