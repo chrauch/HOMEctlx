@@ -61,6 +61,7 @@ class execute_params(uielement):
     important:bool=False
     key:str=None
     confirm:str=None
+    style:str=''
 
 
 @dataclass
@@ -255,6 +256,7 @@ class label(uielement):
     text:str
     style:str=''
     key:str=None
+    details:str=''
 
 
 @dataclass
@@ -311,3 +313,17 @@ class light(uielement):
 @dataclass
 class menu(uielement):
     pass
+
+
+@dataclass
+class table(uielement):
+    rows:list[list[uielement]]
+    headers:list[str]=None
+    style:str=''
+    key:str=None
+
+
+@dataclass
+class notification(uielement):
+    text:str
+    key:str='_notification'

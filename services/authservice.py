@@ -87,12 +87,16 @@ def set_remember_cookie(response, uname: str, max_age: int = 30*24*60*60):
     serializer = get_serializer()
     token = serializer.dumps(uname)
     
+    # Use secure cookies only if not in development 
+    # (request.is_secure checks for HTTPS)
+    is_secure = request.is_secure
+    
     response.set_cookie(
         'remember_token', 
         token, 
         max_age=max_age,
         httponly=True,
-        secure=True,
+        secure=is_secure,  # Only require HTTPS in production
         samesite='Strict'
     )
     return response

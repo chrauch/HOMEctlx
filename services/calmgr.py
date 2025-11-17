@@ -22,11 +22,21 @@ class CalendarEvent:
     date: datetime
     description: str
     source: str  # 'global' or username
-    recurring: str = None  # None, 'yearly', 'monthly', 'weekly'
+    recurring: str = None  # None, 'daily', 'weekly', 'monthly', 'yearly'
+    end_date: datetime = None  # End date for recurring events
     
     def __lt__(self, other):
         """Enable sorting by date."""
         return self.date < other.date
+    
+    def __str__(self):
+        recurring_str = ""
+        if self.recurring:
+            recurring_str = f"[{self.recurring}"
+            if self.end_date:
+                recurring_str += f",end:{self.end_date.strftime('%Y-%m-%d')}"
+            recurring_str += "] "
+        return f"{self.date.strftime('%Y-%m-%d')} {recurring_str}[{self.source.replace('/', ' > ')}]\n\n{self.description}"
 
 
 def parse_event_line(line: str, source: str) -> CalendarEvent:
@@ -34,6 +44,7 @@ def parse_event_line(line: str, source: str) -> CalendarEvent:
     Parse a calendar event line.
     Format: 2025-01-01 New Year's Day
     Format with recurrence: 2025-01-01[yearly] New Year's Day
+    Format with end date: 2025-01-01[weekly,end:2025-12-31] New Year's Day
     """
     line = line.strip()
     if not line or line.startswith('#'):
@@ -42,13 +53,29 @@ def parse_event_line(line: str, source: str) -> CalendarEvent:
     try:
         # Check for recurrence marker
         recurring = None
+        end_date = None
         if '[' in line and ']' in line:
-            # Extract recurrence type
+            # Extract recurrence info
             start_bracket = line.index('[')
             end_bracket = line.index(']')
-            recurring = line[start_bracket+1:end_bracket].lower()
+            recurrence_info = line[start_bracket+1:end_bracket].lower()
             # Remove the bracket part from the line
             line = line[:start_bracket] + line[end_bracket+1:]
+            
+            # Parse recurrence info (may contain type and end date)
+            # Format: "weekly,end:2025-12-31" or just "weekly"
+            parts = recurrence_info.split(',')
+            recurring = parts[0].strip()
+            
+            # Check for end date
+            for part in parts[1:]:
+                part = part.strip()
+                if part.startswith('end:'):
+                    end_date_str = part[4:].strip()
+                    try:
+                        end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
+                    except ValueError:
+                        log.warning(f"Invalid end date format: {end_date_str}")
         
         # Split date and description
         parts = line.split(maxsplit=1)
@@ -58,6 +85,9 @@ def parse_event_line(line: str, source: str) -> CalendarEvent:
         date_str = parts[0].strip()
         description = parts[1].strip()
         
+        # Convert backslashes back to newlines in description
+        description = description.replace(' \\ ', '\n')
+        
         # Parse date
         date = datetime.strptime(date_str, "%Y-%m-%d")
         
@@ -65,7 +95,8 @@ def parse_event_line(line: str, source: str) -> CalendarEvent:
             date=date,
             description=description,
             source=source,
-            recurring=recurring
+            recurring=recurring,
+            end_date=end_date
         )
     except Exception as e:
         log.warning(f"Failed to parse calendar line '{line}': {e}")
@@ -75,6 +106,7 @@ def parse_event_line(line: str, source: str) -> CalendarEvent:
 def expand_recurring_event(event: CalendarEvent, start_date: datetime, end_date: datetime) -> list[CalendarEvent]:
     """
     Expand a recurring event into multiple events within the date range.
+    Supports end_date constraint for recurring events.
     """
     if not event.recurring:
         # Non-recurring event: only return if within range
@@ -82,6 +114,11 @@ def expand_recurring_event(event: CalendarEvent, start_date: datetime, end_date:
             return [event]
         else:
             return []
+    
+    # Determine the effective end date (minimum of query end_date and event's end_date)
+    effective_end_date = end_date
+    if event.end_date:
+        effective_end_date = min(end_date, event.end_date)
     
     events = []
     current_date = event.date
@@ -122,6 +159,8 @@ def expand_recurring_event(event: CalendarEvent, start_date: datetime, end_date:
                     current_date = current_date.replace(year=next_year, month=next_month, day=last_day)
         elif event.recurring == 'weekly':
             current_date = current_date + timedelta(days=7)
+        elif event.recurring == 'daily':
+            current_date = current_date + timedelta(days=1)
         else:
             # Unknown recurrence type, treat as non-recurring
             log.warning(f"Unknown recurrence type: {event.recurring}")
@@ -130,15 +169,16 @@ def expand_recurring_event(event: CalendarEvent, start_date: datetime, end_date:
             else:
                 return []
     
-    # Generate occurrences within the date range
+    # Generate occurrences within the date range (respecting end_date constraint)
     iteration_count = 0
-    while current_date <= end_date and iteration_count < max_iterations:
+    while current_date <= effective_end_date and iteration_count < max_iterations:
         iteration_count += 1
         events.append(CalendarEvent(
             date=current_date,
             description=event.description,
             source=event.source,
-            recurring=event.recurring
+            recurring=event.recurring,
+            end_date=event.end_date
         ))
         
         # Move to next occurrence
@@ -172,6 +212,8 @@ def expand_recurring_event(event: CalendarEvent, start_date: datetime, end_date:
                     current_date = current_date.replace(year=next_year, month=next_month, day=last_day)
         elif event.recurring == 'weekly':
             current_date = current_date + timedelta(days=7)
+        elif event.recurring == 'daily':
+            current_date = current_date + timedelta(days=1)
         else:
             break
     return events
@@ -327,3 +369,79 @@ def get_calendar_files() -> dict:
             log.warning(f"Could not read user calendar directory: {e}")
     
     return calendar_files
+
+
+def add_event_to_file(date: str, event_type: str, description: str, calendar_file_path: list, keep_sorted: bool = False, end_date: str = None):
+    """
+    Add a new event to a calendar file.
+    
+    Args:
+        date: Date in YYYY-MM-DD format
+        event_type: 'once', 'daily', 'weekly', 'monthly', or 'yearly'
+        description: Event description
+        calendar_file_path: Path parts as list (e.g., ['calendar', 'global', 'holidays.calx'])
+        keep_sorted: If True, sort the file and remove empty lines
+        end_date: Optional end date in YYYY-MM-DD format for recurring events
+    
+    Raises:
+        ValueError: If date format is invalid or description is empty
+        Exception: If file operations fail
+    """
+    # Validate date
+    try:
+        datetime.strptime(date, '%Y-%m-%d')
+    except ValueError:
+        raise ValueError("Invalid date format. Use YYYY-MM-DD")
+    
+    # Validate end_date if provided
+    if end_date and end_date.strip():
+        try:
+            datetime.strptime(end_date, '%Y-%m-%d')
+        except ValueError:
+            raise ValueError("Invalid end date format. Use YYYY-MM-DD")
+    
+    if not description.strip():
+        raise ValueError("Description cannot be empty")
+    
+    # Convert newlines in description to backslash for single-line storage
+    description_cleaned = description.strip().replace('\n', ' \\ ')
+    
+    # Build event line
+    recurring_marker = ""
+    if event_type in ['daily', 'weekly', 'monthly', 'yearly']:
+        recurring_marker = f"[{event_type}"
+        if end_date and end_date.strip():
+            recurring_marker += f",end:{end_date.strip()}"
+        recurring_marker += "]"
+    
+    event_line = f"{date}{recurring_marker} {description_cleaned}"
+    
+    # Read current content
+    current_content = fa.read_file(calendar_file_path)
+    
+    if keep_sorted:
+        # Parse all lines, add new event, sort, and remove empty lines
+        lines = current_content.split('\n')
+        event_lines = []
+        
+        # Keep only non-empty lines and add the new event
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith('#'):
+                event_lines.append(stripped)
+        
+        # Add new event
+        event_lines.append(event_line)
+        
+        # Sort by date (first 10 characters should be the date)
+        event_lines.sort(key=lambda x: x[:10] if len(x) >= 10 else x)
+        
+        # Join with newlines and add final newline
+        new_content = '\n'.join(event_lines) + '\n'
+    else:
+        # Simply append
+        new_content = current_content.rstrip() + '\n' + event_line + '\n'
+    
+    # Write back to file
+    fa.update_file(calendar_file_path, new_content, True)
+    log.info(f"Added event to {'/'.join(calendar_file_path)}: {event_line}")

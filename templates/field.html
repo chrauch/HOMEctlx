@@ -185,7 +185,11 @@
     <span class="title-2 glow-a">{{field.text.title()}}</span>
 
     {% elif field.type() == "label" %}
-    <div class="info">
+    <div class="info" 
+        {%- if field.details not in [None, ''] -%}
+        data-details="{{field.details}}"
+        {%- endif -%}
+        >
         {% for line in field.text.split("\n") %}
             {% for part in line.split(" ") %}{{part}}&nbsp;{% endfor %}<br>
         {% endfor %}
@@ -366,6 +370,15 @@
     <span class="info small">&nbsp;&nbsp;{{field.idx+1}}&nbsp;/&nbsp;{{field.size}}</span>
     <span class="small">&nbsp;&nbsp;{{field.item}}</span>
 
+    {% elif field.type() == "section" %}
+    <div class="{{field.style}}">
+        {% for item in field.content %}
+            {% with field=item %}
+                {% include 'field.html' %}
+            {% endwith %}
+        {% endfor %}
+    </div>
+
     {% elif field.type() == "markdown" %}
     {% include 'markdown.html' %}
 
@@ -374,6 +387,35 @@
 
     {% elif field.type() == "menu" %}
     {% include 'menu.html' %}
+
+    {% elif field.type() == "table" %}
+    <table class="{{field.style}}">
+        {% if field.headers %}
+        <thead>
+            <tr class="glow-a">
+                {% for header in field.headers %}
+                <th>{{header}}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        {% endif %}
+        <tbody>
+            {% for row in field.rows %}
+            <tr>
+                {% for cell in row %}
+                <td>
+                    {% with field=cell %}
+                        {% include 'field.html' %}
+                    {% endwith %}
+                </td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% elif field.type() == "notification" %}
+    <div data-alert="{{field.text}}" style="display:none;"></div>
 
     {% else %}
     {# elif field.type() == "text_ro" #}

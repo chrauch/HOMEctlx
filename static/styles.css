@@ -482,3 +482,26 @@ select, button {
             0.05rem 0.05rem 0.05rem black;
     }
 }
+
+/* Calendar table styling */
+table.calendar-grid {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 0.5rem;
+}
+
+table.calendar-grid th {
+    text-align: center;
+    padding: 0.5rem;
+    border: 1px solid rgba(100, 100, 100, 0.3);
+    font-weight: normal;
+}
+
+table.calendar-grid td {
+    text-align: center;
+    padding: 0.5rem;
+    border: 1px solid rgba(100, 100, 100, 0.3);
+    width: 10rem;
+    min-height: 5rem;
+    vertical-align: top;
+}

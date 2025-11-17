@@ -14,9 +14,10 @@
 
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 
-    <script src="{{ url_for('static', filename='common.js') }}"></script>
-    <script src="{{ url_for('static', filename='cmdex.js') }}"></script>
-    <script src="{{ url_for('static', filename='animation.js') }}"></script>
+    <script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='common.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='cmdex.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='animation.js') }}"></script>
 
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
 
